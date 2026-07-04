@@ -4,6 +4,7 @@ from PIL import Image, ImageDraw, ImageFont
 import os
 import io
 import json
+import urllib.request
 
 # ==========================================
 # CONFIGURAÇÃO DA PÁGINA
@@ -22,13 +23,22 @@ st.markdown("""
 st.title("📦 Gerador de Etiquetas QR Code - Almoxarifado")
 
 # ==========================================
-# PASTAS E ARQUIVOS
+# PASTAS, ARQUIVOS E FONTE (CORREÇÃO NUVEM)
 # ==========================================
 LOGO_DIR = "logos"
 CONFIG_FILE = "configuracoes.json"
+FONT_PATH = "Roboto-Regular.ttf"
 
 if not os.path.exists(LOGO_DIR):
     os.makedirs(LOGO_DIR)
+
+# Baixa uma fonte TTF de verdade caso o servidor Linux (Nuvem) não tenha a Arial
+if not os.path.exists(FONT_PATH):
+    try:
+        url_fonte = "https://raw.githubusercontent.com/googlefonts/roboto/main/src/hinted/Roboto-Regular.ttf"
+        urllib.request.urlretrieve(url_fonte, FONT_PATH)
+    except:
+        pass # Se falhar, usa a de emergência
 
 def listar_logos():
     return [f for f in os.listdir(LOGO_DIR) if f.endswith(('png', 'jpg', 'jpeg'))]
@@ -38,7 +48,6 @@ def mm_para_px(mm):
 
 # Função Inteligente de Quebra de Texto
 def quebrar_texto(texto, fonte, max_largura, draw):
-    """Quebra o texto em várias linhas para não ultrapassar a borda direita"""
     if not texto: return ""
     linhas = []
     palavras = texto.split()
@@ -46,7 +55,6 @@ def quebrar_texto(texto, fonte, max_largura, draw):
     
     for palavra in palavras:
         teste_linha = f"{linha_atual} {palavra}".strip()
-        # Pega a largura do texto em pixels
         largura_teste = draw.textbbox((0, 0), teste_linha, font=fonte)[2]
         
         if largura_teste <= max_largura:
@@ -78,15 +86,15 @@ configs_salvas = carregar_json()
 logos_disponiveis = ["Nenhum"] + listar_logos()
 
 valores_padrao = {
-    'largura_mm': 40, 'altura_mm': 60, 'cor_texto': '#000000', 
+    'largura_mm': 60, 'altura_mm': 30, 'cor_texto': '#000000', 
     'tamanho_fonte': 35, 'tamanho_fonte_extra': 20, 
     'cols_por_linha_a4': 5, 'mostrar_borda': True, 
     'logo_superior': 'Nenhum', 'logo_inferior': 'Nenhum',
     'pos_x_texto_mm': 2, 'pos_y_texto_mm': 5, 
     'pos_x_extra_mm': 2, 'pos_y_extra_mm': 15,
     'tamanho_qr_mm': 20, 'pos_x_qr_mm': 10, 'pos_y_qr_mm': 25, 
-    'largura_logo_sup_mm': 15, 'pos_x_sup_mm': 22, 'pos_y_sup_mm': 2,
-    'largura_logo_inf_mm': 10, 'pos_x_inf_mm': 28, 'pos_y_inf_mm': 48, 
+    'largura_logo_sup_mm': 15, 'pos_x_sup_mm': 42, 'pos_y_sup_mm': 2,
+    'largura_logo_inf_mm': 10, 'pos_x_inf_mm': 45, 'pos_y_inf_mm': 20, 
     'margem_pagina_x_mm': 10, 'margem_pagina_y_mm': 10, 'margem_x_mm': 2, 'margem_y_mm': 2
 }
 
@@ -109,7 +117,7 @@ if configs_salvas:
             st.rerun()
 
 with st.sidebar.expander("➕ Salvar Configuração Atual"):
-    nome_novo_padrao = st.text_input("Nome do Padrão (Ex: A4 Peças Grandes)")
+    nome_novo_padrao = st.text_input("Nome do Padrão (Ex: Padrão Z1 60x30)")
     if st.button("💾 Salvar Padrão"):
         if nome_novo_padrao:
             configs_salvas[nome_novo_padrao] = {k: st.session_state[k] for k in valores_padrao.keys()}
@@ -175,16 +183,16 @@ st.sidebar.header("📄 Margens da Folha A4")
 cols_por_linha_a4 = st.sidebar.slider("Etiquetas por Linha", 1, 10, key="cols_por_linha_a4")
 margem_pagina_x_mm = st.sidebar.number_input("Esquerda do Papel (mm)", 0, 100, key="margem_pagina_x_mm")
 margem_pagina_y_mm = st.sidebar.number_input("Superior do Papel (mm)", 0, 100, key="margem_pagina_y_mm")
-margem_x_mm = st.sidebar.slider("Espaço Horizontal entre etiquetas (mm)", 0, 50, key="margem_x_mm")
-margem_y_mm = st.sidebar.slider("Espaço Vertical entre etiquetas (mm)", 0, 50, key="margem_y_mm")
+margem_x_mm = st.sidebar.slider("Espaço Horizontal (mm)", 0, 50, key="margem_x_mm")
+margem_y_mm = st.sidebar.slider("Espaço Vertical (mm)", 0, 50, key="margem_y_mm")
 
 # ==========================================
 # ÁREA PRINCIPAL
 # ==========================================
 st.write("### 📍 Dados da Etiqueta")
-st.info("💡 **Dica:** Se o Texto Extra for muito longo, ele será quebrado em várias linhas automaticamente para não vazar da etiqueta.")
+st.info("💡 **Dica:** Copie duas colunas do Excel e cole abaixo. O sistema coloca a Coluna 1 no QR Code e a Coluna 2 como Texto Extra.")
 
-enderecos_input = st.text_area("Cole os dados aqui:", "1899089414 ; PRISIONEIRO HS M27X145mm DIN 2510\n1899092540 ; PARAFUSO AJUSTE SEXTAVADO M24X127mm AÇO INOX\n1899092597 ; BUCHA VALVULA 16X40")
+enderecos_input = st.text_area("Cole os dados aqui:", "P-05 ; BUCHA VALVULA 16X40\nP-06 ; PARAFUSO SEXTAVADO INOX M24\nP-07 ; FLANGE DE VEDACAO DN150")
 
 dados_etiquetas = []
 for linha in enderecos_input.split('\n'):
@@ -208,9 +216,14 @@ def criar_etiqueta_imagem(dados):
     if mostrar_borda:
         draw.rectangle([(0, 0), (larg_px-1, alt_px-1)], outline="black", width=1)
     
+    # A MÁGICA DA FONTE NA NUVEM ESTÁ AQUI
     try: 
-        fonte_princ = ImageFont.truetype("arial.ttf", tamanho_fonte)
-        fonte_extra = ImageFont.truetype("arial.ttf", tamanho_fonte_extra)
+        if os.path.exists(FONT_PATH):
+            fonte_princ = ImageFont.truetype(FONT_PATH, tamanho_fonte)
+            fonte_extra = ImageFont.truetype(FONT_PATH, tamanho_fonte_extra)
+        else:
+            fonte_princ = ImageFont.truetype("arial.ttf", tamanho_fonte)
+            fonte_extra = ImageFont.truetype("arial.ttf", tamanho_fonte_extra)
     except: 
         fonte_princ = ImageFont.load_default()
         fonte_extra = ImageFont.load_default()
@@ -222,11 +235,10 @@ def criar_etiqueta_imagem(dados):
     if dados["extra"]:
         pos_x_extra_px = mm_para_px(pos_x_extra_mm)
         pos_y_extra_px = mm_para_px(pos_y_extra_mm)
-        margem_seguranca_direita_px = mm_para_px(2) # Deixa 2mm de margem da borda direita
+        margem_seguranca_direita_px = mm_para_px(2) 
         largura_maxima_permitida = larg_px - pos_x_extra_px - margem_seguranca_direita_px
         
         texto_formatado = quebrar_texto(dados["extra"], fonte_extra, largura_maxima_permitida, draw)
-        
         draw.text((pos_x_extra_px, pos_y_extra_px), texto_formatado, fill=cor_texto, font=fonte_extra, spacing=4)
     
     # QR Code
