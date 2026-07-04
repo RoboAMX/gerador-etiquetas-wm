@@ -106,7 +106,7 @@ valores_padrao = {
     'negrito_princ': False, 'italico_princ': False, 'sublinhado_princ': False,
     'negrito_extra': False, 'italico_extra': False, 'sublinhado_extra': False,
     'cols_por_linha_a4': 5, 'mostrar_borda': True, 
-    'logo_superior': 'Nenhum', 'logo_inferior': 'Nenhum',
+    'logo_superior': 'Nenhum', 'logo_inferior': 'Nenhum', 'logo_centro_qr': 'Nenhum',
     'pos_x_texto_mm': 2, 'pos_y_texto_mm': 5, 
     'pos_x_extra_mm': 2, 'pos_y_extra_mm': 15,
     'tamanho_qr_mm': 20, 'pos_x_qr_mm': 10, 'pos_y_qr_mm': 25, 
@@ -127,7 +127,7 @@ if configs_salvas:
         if opcao_carregar != "-- Escolha --":
             padrao = configs_salvas[opcao_carregar]
             for k, v in padrao.items():
-                if k in ['logo_superior', 'logo_inferior'] and v not in logos_disponiveis:
+                if k in ['logo_superior', 'logo_inferior', 'logo_centro_qr'] and v not in logos_disponiveis:
                     st.session_state[k] = "Nenhum"
                 elif k in st.session_state:
                     st.session_state[k] = v
@@ -175,7 +175,7 @@ italico_extra = col5.checkbox("Itálico ", key="italico_extra")
 sublinhado_extra = col6.checkbox("Sublinhado ", key="sublinhado_extra")
 
 st.sidebar.markdown("---")
-st.sidebar.header("🖼️ Logotipos")
+st.sidebar.header("🖼️ Logotipos e Personalização")
 novo_logo = st.sidebar.file_uploader("Upload de Novo Logo", type=['png', 'jpg', 'jpeg'])
 if novo_logo is not None:
     caminho_salvar = os.path.join(LOGO_DIR, novo_logo.name)
@@ -183,8 +183,9 @@ if novo_logo is not None:
         f.write(novo_logo.getbuffer())
     st.sidebar.success("Logo salvo! Atualize a página.")
 
-logo_superior = st.sidebar.selectbox("Logo Superior", logos_disponiveis, key="logo_superior")
-logo_inferior = st.sidebar.selectbox("Logo Inferior", logos_disponiveis, key="logo_inferior")
+logo_superior = st.sidebar.selectbox("Logo Superior Direito", logos_disponiveis, key="logo_superior")
+logo_inferior = st.sidebar.selectbox("Logo Inferior Direito", logos_disponiveis, key="logo_inferior")
+logo_centro_qr = st.sidebar.selectbox("🌟 Logo no Centro do QR Code", logos_disponiveis, key="logo_centro_qr")
 
 with st.sidebar.expander("📍 Posições e Tamanhos (Ajuste Fino)"):
     st.write("**Texto Principal (Igual ao QR Code)**")
@@ -291,17 +292,45 @@ def criar_etiqueta_imagem(dados):
                 
             y_atual_extra += altura_linha
     
-    # === QR CODE COLORIDO ===
+    # === QR CODE (COM SUPORTE A LOGO NO CENTRO E CORES) ===
     qr_px = mm_para_px(tamanho_qr_mm)
-    qr = qrcode.QRCode(box_size=10, border=1)
+    
+    # Configuração de alta correção de erro (H) permite tampar até 30% do QR Code sem quebrar a leitura
+    qr = qrcode.QRCode(
+        error_correction=qrcode.constants.ERROR_CORRECT_H, 
+        box_size=10, 
+        border=1
+    )
     qr.add_data(dados["qr"])
     qr.make(fit=True)
     
-    # Gera a imagem do QR Code usando a cor escolhida pelo usuário
-    img_qr = qr.make_image(fill_color=cor_qr, back_color="white").convert('RGB').resize((qr_px, qr_px))
-    img.paste(img_qr, (mm_para_px(pos_x_qr_mm), mm_para_px(pos_y_qr_mm)))
+    img_qr = qr.make_image(fill_color=cor_qr, back_color="white").convert('RGBA').resize((qr_px, qr_px))
     
-    # Logos
+    # Adiciona Logo no Centro do QR se selecionado
+    if logo_centro_qr != "Nenhum" and logo_centro_qr in logos_disponiveis:
+        qr_logo_path = os.path.join(LOGO_DIR, logo_centro_qr)
+        qr_logo = Image.open(qr_logo_path).convert("RGBA")
+        
+        # O tamanho do logo será de no máximo 25% do tamanho do QR Code para garantir a leitura
+        logo_size = int(qr_px * 0.25)
+        proporcao = logo_size / float(max(qr_logo.width, qr_logo.height))
+        nova_larg = int(qr_logo.width * proporcao)
+        nova_alt = int(qr_logo.height * proporcao)
+        qr_logo = qr_logo.resize((nova_larg, nova_alt), Image.Resampling.LANCZOS)
+        
+        # Cria um quadradinho branco por trás da logo para ela não se misturar com os pixels do QR
+        bg_logo = Image.new("RGBA", (nova_larg + 4, nova_alt + 4), "white")
+        bg_logo.paste(qr_logo, (2, 2), qr_logo)
+        
+        pos_x_centro = (qr_px - bg_logo.width) // 2
+        pos_y_centro = (qr_px - bg_logo.height) // 2
+        
+        img_qr.paste(bg_logo, (pos_x_centro, pos_y_centro))
+    
+    # Cola o QR final na etiqueta
+    img.paste(img_qr, (mm_para_px(pos_x_qr_mm), mm_para_px(pos_y_qr_mm)), img_qr)
+    
+    # === OUTROS LOGOS ===
     if logo_superior != "Nenhum" and logo_superior in logos_disponiveis:
         l_img = Image.open(os.path.join(LOGO_DIR, logo_superior)).convert("RGBA")
         l_px = mm_para_px(largura_logo_sup_mm)
