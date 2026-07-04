@@ -23,22 +23,40 @@ st.markdown("""
 st.title("📦 Gerador de Etiquetas QR Code - Almoxarifado")
 
 # ==========================================
-# PASTAS, ARQUIVOS E FONTE (CORREÇÃO NUVEM)
+# PASTAS E DOWNLOAD DE FONTES (NUVEM)
 # ==========================================
 LOGO_DIR = "logos"
 CONFIG_FILE = "configuracoes.json"
-FONT_PATH = "Roboto-Regular.ttf"
 
 if not os.path.exists(LOGO_DIR):
     os.makedirs(LOGO_DIR)
 
-# Baixa uma fonte TTF de verdade caso o servidor Linux (Nuvem) não tenha a Arial
-if not os.path.exists(FONT_PATH):
-    try:
-        url_fonte = "https://raw.githubusercontent.com/googlefonts/roboto/main/src/hinted/Roboto-Regular.ttf"
-        urllib.request.urlretrieve(url_fonte, FONT_PATH)
-    except:
-        pass # Se falhar, usa a de emergência
+# Mapeamento das variações da fonte Roboto
+FONTS = {
+    "regular": "Roboto-Regular.ttf",
+    "bold": "Roboto-Bold.ttf",
+    "italic": "Roboto-Italic.ttf",
+    "bold_italic": "Roboto-BoldItalic.ttf"
+}
+
+URLS = {
+    "regular": "https://raw.githubusercontent.com/googlefonts/roboto/main/src/hinted/Roboto-Regular.ttf",
+    "bold": "https://raw.githubusercontent.com/googlefonts/roboto/main/src/hinted/Roboto-Bold.ttf",
+    "italic": "https://raw.githubusercontent.com/googlefonts/roboto/main/src/hinted/Roboto-Italic.ttf",
+    "bold_italic": "https://raw.githubusercontent.com/googlefonts/roboto/main/src/hinted/Roboto-BoldItalic.ttf"
+}
+
+# Baixa as fontes automaticamente se não existirem no servidor
+for key, path in FONTS.items():
+    if not os.path.exists(path):
+        try: urllib.request.urlretrieve(URLS[key], path)
+        except: pass
+
+def get_font_path(negrito, italico):
+    if negrito and italico: return FONTS["bold_italic"]
+    if negrito: return FONTS["bold"]
+    if italico: return FONTS["italic"]
+    return FONTS["regular"]
 
 def listar_logos():
     return [f for f in os.listdir(LOGO_DIR) if f.endswith(('png', 'jpg', 'jpeg'))]
@@ -46,9 +64,9 @@ def listar_logos():
 def mm_para_px(mm):
     return int((mm * 300) / 25.4)
 
-# Função Inteligente de Quebra de Texto
-def quebrar_texto(texto, fonte, max_largura, draw):
-    if not texto: return ""
+# Função Inteligente de Quebra de Texto (Agora retorna lista de linhas)
+def quebrar_texto_lista(texto, fonte, max_largura, draw):
+    if not texto: return []
     linhas = []
     palavras = texto.split()
     linha_atual = ""
@@ -67,7 +85,7 @@ def quebrar_texto(texto, fonte, max_largura, draw):
     if linha_atual:
         linhas.append(linha_atual)
         
-    return "\n".join(linhas)
+    return linhas
 
 # ==========================================
 # SISTEMA DE SALVAR PADRÕES (JSON)
@@ -88,6 +106,8 @@ logos_disponiveis = ["Nenhum"] + listar_logos()
 valores_padrao = {
     'largura_mm': 60, 'altura_mm': 30, 'cor_texto': '#000000', 
     'tamanho_fonte': 35, 'tamanho_fonte_extra': 20, 
+    'negrito_princ': False, 'italico_princ': False, 'sublinhado_princ': False,
+    'negrito_extra': False, 'italico_extra': False, 'sublinhado_extra': False,
     'cols_por_linha_a4': 5, 'mostrar_borda': True, 
     'logo_superior': 'Nenhum', 'logo_inferior': 'Nenhum',
     'pos_x_texto_mm': 2, 'pos_y_texto_mm': 5, 
@@ -112,7 +132,8 @@ if configs_salvas:
             for k, v in padrao.items():
                 if k in ['logo_superior', 'logo_inferior'] and v not in logos_disponiveis:
                     st.session_state[k] = "Nenhum"
-                else:
+                # Garante que configurações novas não quebrem padrões antigos
+                elif k in st.session_state:
                     st.session_state[k] = v
             st.rerun()
 
@@ -139,8 +160,20 @@ st.sidebar.markdown("---")
 st.sidebar.header("⚙️ Configurações Visuais")
 mostrar_borda = st.sidebar.checkbox("Imprimir linha de borda", key="mostrar_borda")
 cor_texto = st.sidebar.color_picker("Cor do Texto", key="cor_texto")
-tamanho_fonte = st.sidebar.slider("Tamanho Fonte Principal (QR)", 10, 100, key="tamanho_fonte")
-tamanho_fonte_extra = st.sidebar.slider("Tamanho Fonte Texto Extra", 5, 100, key="tamanho_fonte_extra")
+
+st.sidebar.markdown("**Formatação: Texto Principal (QR)**")
+tamanho_fonte = st.sidebar.slider("Tamanho da Fonte Principal", 10, 100, key="tamanho_fonte")
+col1, col2, col3 = st.sidebar.columns(3)
+negrito_princ = col1.checkbox("Negrito", key="negrito_princ")
+italico_princ = col2.checkbox("Itálico", key="italico_princ")
+sublinhado_princ = col3.checkbox("Sublinhado", key="sublinhado_princ")
+
+st.sidebar.markdown("**Formatação: Texto Extra**")
+tamanho_fonte_extra = st.sidebar.slider("Tamanho da Fonte Extra", 5, 100, key="tamanho_fonte_extra")
+col4, col5, col6 = st.sidebar.columns(3)
+negrito_extra = col4.checkbox("Negrito ", key="negrito_extra")
+italico_extra = col5.checkbox("Itálico ", key="italico_extra")
+sublinhado_extra = col6.checkbox("Sublinhado ", key="sublinhado_extra")
 
 st.sidebar.markdown("---")
 st.sidebar.header("🖼️ Logotipos")
@@ -190,7 +223,7 @@ margem_y_mm = st.sidebar.slider("Espaço Vertical (mm)", 0, 50, key="margem_y_mm
 # ÁREA PRINCIPAL
 # ==========================================
 st.write("### 📍 Dados da Etiqueta")
-st.info("💡 **Dica:** Copie duas colunas do Excel e cole abaixo. O sistema coloca a Coluna 1 no QR Code e a Coluna 2 como Texto Extra.")
+st.info("💡 **Dica:** Cole duas colunas do Excel. O sistema coloca a Coluna 1 no QR Code e a Coluna 2 como Texto Extra.")
 
 enderecos_input = st.text_area("Cole os dados aqui:", "P-05 ; BUCHA VALVULA 16X40\nP-06 ; PARAFUSO SEXTAVADO INOX M24\nP-07 ; FLANGE DE VEDACAO DN150")
 
@@ -216,30 +249,51 @@ def criar_etiqueta_imagem(dados):
     if mostrar_borda:
         draw.rectangle([(0, 0), (larg_px-1, alt_px-1)], outline="black", width=1)
     
-    # A MÁGICA DA FONTE NA NUVEM ESTÁ AQUI
+    # Carrega as fontes de acordo com a formatação escolhida
     try: 
-        if os.path.exists(FONT_PATH):
-            fonte_princ = ImageFont.truetype(FONT_PATH, tamanho_fonte)
-            fonte_extra = ImageFont.truetype(FONT_PATH, tamanho_fonte_extra)
-        else:
-            fonte_princ = ImageFont.truetype("arial.ttf", tamanho_fonte)
-            fonte_extra = ImageFont.truetype("arial.ttf", tamanho_fonte_extra)
+        path_princ = get_font_path(negrito_princ, italico_princ)
+        path_extra = get_font_path(negrito_extra, italico_extra)
+        
+        fonte_princ = ImageFont.truetype(path_princ if os.path.exists(path_princ) else "arial.ttf", tamanho_fonte)
+        fonte_extra = ImageFont.truetype(path_extra if os.path.exists(path_extra) else "arial.ttf", tamanho_fonte_extra)
     except: 
         fonte_princ = ImageFont.load_default()
         fonte_extra = ImageFont.load_default()
     
-    # Desenha o texto principal
-    draw.text((mm_para_px(pos_x_texto_mm), mm_para_px(pos_y_texto_mm)), dados["qr"], fill=cor_texto, font=fonte_princ)
+    # === DESENHA O TEXTO PRINCIPAL ===
+    x_princ_px = mm_para_px(pos_x_texto_mm)
+    y_princ_px = mm_para_px(pos_y_texto_mm)
+    draw.text((x_princ_px, y_princ_px), dados["qr"], fill=cor_texto, font=fonte_princ)
     
-    # Desenha o texto extra (com quebra de linha inteligente)
+    if sublinhado_princ:
+        bbox_princ = draw.textbbox((x_princ_px, y_princ_px), dados["qr"], font=fonte_princ)
+        espessura_linha = max(1, tamanho_fonte // 15)
+        # Desenha a linha de ponta a ponta da palavra (Coordenadas: Esq, Baixo, Dir, Baixo)
+        draw.line([(bbox_princ[0], bbox_princ[3]), (bbox_princ[2], bbox_princ[3])], fill=cor_texto, width=espessura_linha)
+    
+    # === DESENHA O TEXTO EXTRA (COM QUEBRA DE LINHA E SUBLINHADO) ===
     if dados["extra"]:
-        pos_x_extra_px = mm_para_px(pos_x_extra_mm)
-        pos_y_extra_px = mm_para_px(pos_y_extra_mm)
-        margem_seguranca_direita_px = mm_para_px(2) 
-        largura_maxima_permitida = larg_px - pos_x_extra_px - margem_seguranca_direita_px
+        x_extra_px = mm_para_px(pos_x_extra_mm)
+        y_extra_px = mm_para_px(pos_y_extra_mm)
+        largura_maxima = larg_px - x_extra_px - mm_para_px(2) 
         
-        texto_formatado = quebrar_texto(dados["extra"], fonte_extra, largura_maxima_permitida, draw)
-        draw.text((pos_x_extra_px, pos_y_extra_px), texto_formatado, fill=cor_texto, font=fonte_extra, spacing=4)
+        linhas_extra = quebrar_texto_lista(dados["extra"], fonte_extra, largura_maxima, draw)
+        
+        # Calcula a altura da linha para dar o espaçamento correto no ENTER
+        bbox_teste = draw.textbbox((0,0), "Ag", font=fonte_extra)
+        altura_linha = (bbox_teste[3] - bbox_teste[1]) + 4 # +4px de respiro
+        
+        y_atual_extra = y_extra_px
+        espessura_linha_extra = max(1, tamanho_fonte_extra // 15)
+        
+        for linha_texto in linhas_extra:
+            draw.text((x_extra_px, y_atual_extra), linha_texto, fill=cor_texto, font=fonte_extra)
+            
+            if sublinhado_extra:
+                bbox_linha = draw.textbbox((x_extra_px, y_atual_extra), linha_texto, font=fonte_extra)
+                draw.line([(bbox_linha[0], bbox_linha[3]), (bbox_linha[2], bbox_linha[3])], fill=cor_texto, width=espessura_linha_extra)
+                
+            y_atual_extra += altura_linha
     
     # QR Code
     qr_px = mm_para_px(tamanho_qr_mm)
