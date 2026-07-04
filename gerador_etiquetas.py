@@ -31,7 +31,6 @@ CONFIG_FILE = "configuracoes.json"
 if not os.path.exists(LOGO_DIR):
     os.makedirs(LOGO_DIR)
 
-# Mapeamento das variações da fonte Roboto
 FONTS = {
     "regular": "Roboto-Regular.ttf",
     "bold": "Roboto-Bold.ttf",
@@ -46,7 +45,6 @@ URLS = {
     "bold_italic": "https://raw.githubusercontent.com/googlefonts/roboto/main/src/hinted/Roboto-BoldItalic.ttf"
 }
 
-# Baixa as fontes automaticamente se não existirem no servidor
 for key, path in FONTS.items():
     if not os.path.exists(path):
         try: urllib.request.urlretrieve(URLS[key], path)
@@ -64,7 +62,6 @@ def listar_logos():
 def mm_para_px(mm):
     return int((mm * 300) / 25.4)
 
-# Função Inteligente de Quebra de Texto (Agora retorna lista de linhas)
 def quebrar_texto_lista(texto, fonte, max_largura, draw):
     if not texto: return []
     linhas = []
@@ -104,7 +101,7 @@ configs_salvas = carregar_json()
 logos_disponiveis = ["Nenhum"] + listar_logos()
 
 valores_padrao = {
-    'largura_mm': 60, 'altura_mm': 30, 'cor_texto': '#000000', 
+    'largura_mm': 60, 'altura_mm': 30, 'cor_texto': '#000000', 'cor_qr': '#000000',
     'tamanho_fonte': 35, 'tamanho_fonte_extra': 20, 
     'negrito_princ': False, 'italico_princ': False, 'sublinhado_princ': False,
     'negrito_extra': False, 'italico_extra': False, 'sublinhado_extra': False,
@@ -132,7 +129,6 @@ if configs_salvas:
             for k, v in padrao.items():
                 if k in ['logo_superior', 'logo_inferior'] and v not in logos_disponiveis:
                     st.session_state[k] = "Nenhum"
-                # Garante que configurações novas não quebrem padrões antigos
                 elif k in st.session_state:
                     st.session_state[k] = v
             st.rerun()
@@ -159,7 +155,10 @@ altura_mm = st.sidebar.number_input("Altura (mm)", 10, 297, key="altura_mm")
 st.sidebar.markdown("---")
 st.sidebar.header("⚙️ Configurações Visuais")
 mostrar_borda = st.sidebar.checkbox("Imprimir linha de borda", key="mostrar_borda")
-cor_texto = st.sidebar.color_picker("Cor do Texto", key="cor_texto")
+
+col_cor1, col_cor2 = st.sidebar.columns(2)
+cor_texto = col_cor1.color_picker("Cor do Texto", key="cor_texto")
+cor_qr = col_cor2.color_picker("Cor do QR", key="cor_qr")
 
 st.sidebar.markdown("**Formatação: Texto Principal (QR)**")
 tamanho_fonte = st.sidebar.slider("Tamanho da Fonte Principal", 10, 100, key="tamanho_fonte")
@@ -249,7 +248,6 @@ def criar_etiqueta_imagem(dados):
     if mostrar_borda:
         draw.rectangle([(0, 0), (larg_px-1, alt_px-1)], outline="black", width=1)
     
-    # Carrega as fontes de acordo com a formatação escolhida
     try: 
         path_princ = get_font_path(negrito_princ, italico_princ)
         path_extra = get_font_path(negrito_extra, italico_extra)
@@ -268,10 +266,9 @@ def criar_etiqueta_imagem(dados):
     if sublinhado_princ:
         bbox_princ = draw.textbbox((x_princ_px, y_princ_px), dados["qr"], font=fonte_princ)
         espessura_linha = max(1, tamanho_fonte // 15)
-        # Desenha a linha de ponta a ponta da palavra (Coordenadas: Esq, Baixo, Dir, Baixo)
         draw.line([(bbox_princ[0], bbox_princ[3]), (bbox_princ[2], bbox_princ[3])], fill=cor_texto, width=espessura_linha)
     
-    # === DESENHA O TEXTO EXTRA (COM QUEBRA DE LINHA E SUBLINHADO) ===
+    # === DESENHA O TEXTO EXTRA ===
     if dados["extra"]:
         x_extra_px = mm_para_px(pos_x_extra_mm)
         y_extra_px = mm_para_px(pos_y_extra_mm)
@@ -279,9 +276,8 @@ def criar_etiqueta_imagem(dados):
         
         linhas_extra = quebrar_texto_lista(dados["extra"], fonte_extra, largura_maxima, draw)
         
-        # Calcula a altura da linha para dar o espaçamento correto no ENTER
         bbox_teste = draw.textbbox((0,0), "Ag", font=fonte_extra)
-        altura_linha = (bbox_teste[3] - bbox_teste[1]) + 4 # +4px de respiro
+        altura_linha = (bbox_teste[3] - bbox_teste[1]) + 4
         
         y_atual_extra = y_extra_px
         espessura_linha_extra = max(1, tamanho_fonte_extra // 15)
@@ -295,12 +291,14 @@ def criar_etiqueta_imagem(dados):
                 
             y_atual_extra += altura_linha
     
-    # QR Code
+    # === QR CODE COLORIDO ===
     qr_px = mm_para_px(tamanho_qr_mm)
     qr = qrcode.QRCode(box_size=10, border=1)
     qr.add_data(dados["qr"])
     qr.make(fit=True)
-    img_qr = qr.make_image(fill_color="black", back_color="white").resize((qr_px, qr_px))
+    
+    # Gera a imagem do QR Code usando a cor escolhida pelo usuário
+    img_qr = qr.make_image(fill_color=cor_qr, back_color="white").convert('RGB').resize((qr_px, qr_px))
     img.paste(img_qr, (mm_para_px(pos_x_qr_mm), mm_para_px(pos_y_qr_mm)))
     
     # Logos
